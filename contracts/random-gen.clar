@@ -1,4 +1,4 @@
-;; Oracle: Verifiable Randomness Generator
+;; EntropyOracle: Verifiable Randomness Generator
 ;; A Clarity utility that combines multiple entropy sources to generate verifiably random numbers
 
 ;; Error codes
@@ -40,8 +40,8 @@
   (let 
     (
       ;; Get Stacks block header hashes (recent + previous)
-      (current-block-hash (unwrap-panic (get-stacks-block-info? header-hash (- stacks-block-height u1))))
-      (older-block-hash (unwrap-panic (get-stacks-block-info? header-hash (- stacks-block-height u2))))
+      (current-block-hash (unwrap-panic (get-block-info? header-hash (- block-height u1))))
+      (older-block-hash (unwrap-panic (get-block-info? header-hash (- block-height u2))))
       
       ;; Current transaction data - use burn block info
       (burn-block-hash (unwrap-panic (get-burn-block-info? header-hash (- burn-block-height u1))))
@@ -109,8 +109,8 @@
     (asserts! (> max-value u0) ERR_ZERO_INTERVAL)
     
     ;; Prevent same-block attacks
-    (asserts! (> stacks-block-height (var-get previous-block)) ERR_BLOCK_SECURITY)
-    (var-set previous-block stacks-block-height)
+    (asserts! (> block-height (var-get previous-block)) ERR_BLOCK_SECURITY)
+    (var-set previous-block block-height)
     
     ;; Generate raw random value
     (let 
