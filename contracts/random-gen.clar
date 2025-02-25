@@ -5,6 +5,7 @@
 (define-constant ERR_INVALID_INTERVAL (err u100))
 (define-constant ERR_ZERO_INTERVAL (err u101))
 (define-constant ERR_BLOCK_SECURITY (err u102))
+(define-constant ERR_INVALID_INPUT (err u103))
 
 ;; Define data variables
 (define-data-var randomness-pool (buff 32) 0x0000000000000000000000000000000000000000000000000000000000000000)
@@ -35,8 +36,19 @@
   (unwrap-panic (element-at 0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff value))
 )
 
+;; Validate that buffer is exactly 32 bytes
+(define-private (validate-input (input (buff 32)))
+  (is-eq (len input) u32)
+)
+
+;; Sanitize user input by hashing it with contract data
+;; This ensures the user input cannot directly control entropy
+(define-private (sanitize-input (input (buff 32)))
+  (sha256 (concat input (var-get randomness-pool)))
+)
+
 ;; Combine entropy sources into a single hash
-(define-private (mix-entropy-sources (user-input (buff 32)))
+(define-private (mix-entropy-sources (sanitized-input (buff 32)))
   (let 
     (
       ;; Get Stacks block header hashes (recent + previous)
@@ -59,7 +71,7 @@
                                 (concat current-block-hash older-block-hash)
                                 (concat 
                                   (concat burn-block-hash caller-bytes)
-                                  (concat current-pool (sha256 sequence-bytes))))))
+                                  (concat current-pool (sha256 (concat sanitized-input sequence-bytes)))))))
     )
     mixed-entropy
   )
@@ -110,12 +122,18 @@
     
     ;; Prevent same-block attacks
     (asserts! (> block-height (var-get previous-block)) ERR_BLOCK_SECURITY)
+    
+    ;; Validate user input
+    (asserts! (validate-input user-input) ERR_INVALID_INPUT)
+    
+    ;; Update block tracking
     (var-set previous-block block-height)
     
-    ;; Generate raw random value
+    ;; Generate raw random value with sanitized input
     (let 
       (
-        (entropy-sample (mix-entropy-sources user-input))
+        (sanitized-seed (sanitize-input user-input))
+        (entropy-sample (mix-entropy-sources sanitized-seed))
         (raw-number (buffer-to-uint entropy-sample))
         (bounded-result (mod raw-number (+ max-value u1)))
       )
@@ -135,6 +153,9 @@
   (begin
     ;; Verify the range is valid
     (asserts! (>= max-value min-value) ERR_INVALID_INTERVAL)
+    
+    ;; Validate user input
+    (asserts! (validate-input user-input) ERR_INVALID_INPUT)
     
     ;; Get random value from 0 to (max-value - min-value)
     (let 
